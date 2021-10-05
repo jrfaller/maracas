@@ -11,5 +11,11 @@ public class ConstructorLessAccessibleMI {
 		ConstructorLessAccessiblePub2PackPriv c2 = new ConstructorLessAccessiblePub2PackPriv();
 		ConstructorLessAccessiblePub2Priv c3 = new ConstructorLessAccessiblePub2Priv();
 	}
-	
+
+	public void clientAnonymous() {
+		ConstructorLessAccessiblePub2Pro c1 = new ConstructorLessAccessiblePub2Pro() {};
+		ConstructorLessAccessiblePub2PackPriv c2 = new ConstructorLessAccessiblePub2PackPriv() {};
+		ConstructorLessAccessiblePub2Priv c3 = new ConstructorLessAccessiblePub2Priv() {};
+	}
+
 }

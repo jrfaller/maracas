@@ -5,12 +5,16 @@ import main.classNoLongerPublic.ClassNoLongerPublic;
 public class ClassNoLongerPublicTD {
 
 	ClassNoLongerPublic field;
-	
+
 	public ClassNoLongerPublicTD(ClassNoLongerPublic field) {
 		this.field = field;
 	}
-	
+
 	public void refClassNoLongerPublic() {
 		ClassNoLongerPublic c = new ClassNoLongerPublic();
+	}
+
+	public void anonClassNoLongerPublic() {
+		ClassNoLongerPublic c = new ClassNoLongerPublic() {};
 	}
 }

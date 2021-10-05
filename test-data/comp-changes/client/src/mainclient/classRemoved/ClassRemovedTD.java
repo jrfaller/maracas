@@ -7,5 +7,9 @@ public class ClassRemovedTD {
 
 	private ClassRemoved c;
 	private IClassRemoved i;
-	
+
+	void classRemovedAnonymous() {
+		ClassRemoved c = new ClassRemoved() {};
+	}
+
 }
