@@ -13,6 +13,7 @@ import japicmp.model.JApiSuperclass;
 import javassist.CtConstructor;
 import javassist.CtField;
 import javassist.CtMethod;
+import spoon.SpoonException;
 import spoon.reflect.CtModel;
 import spoon.reflect.declaration.CtNamedElement;
 import spoon.reflect.declaration.CtPackage;
@@ -26,7 +27,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -78,79 +78,77 @@ public class Delta {
         CtModel model = SpoonHelpers.buildSpoonModel(null, oldJar);
         CtPackage root = model.getRootPackage();
 
-        // FIXME: Ok, for some reason, @Deprecated methods (and fields? classes?)
-        // do not show up in the resulting model. This means that a @Deprecated
-        // method that gets removed can't be mapped to the proper CtElement.
-
         JApiCmpDeltaVisitor.visit(classes, new JApiCmpDeltaVisitor() {
             @Override
-            public void visit(JApiClass jApiClass) {
-                CtTypeReference<?> clsRef = root.getFactory().Type().createReference(jApiClass.getFullyQualifiedName());
-                jApiClass.getCompatibilityChanges().forEach(c ->
-                    brokenDeclarations.add(new BrokenClass(jApiClass, clsRef, c))
+            public void visit(JApiClass cls) {
+                CtTypeReference<?> clsRef = root.getFactory().Type().createReference(cls.getFullyQualifiedName());
+
+                cls.getCompatibilityChanges().forEach(c ->
+                    brokenDeclarations.add(new BrokenClass(cls, clsRef, c))
                 );
 
-                jApiClass.getInterfaces().forEach(i ->
-                    visit(jApiClass, i)
+                cls.getInterfaces().forEach(i ->
+                    visit(cls, i)
                 );
             }
 
             @Override
-            public void visit(JApiMethod jApiMethod) {
-                CtTypeReference<?> clsRef = root.getFactory().Type().createReference(jApiMethod.getjApiClass().getFullyQualifiedName());
-                var oldMethodOpt = jApiMethod.getOldMethod();
-                var newMethodOpt = jApiMethod.getNewMethod();
+            public void visit(JApiMethod m) {
+                var oldMethodOpt = m.getOldMethod();
+                var newMethodOpt = m.getNewMethod();
+                CtTypeReference<?> clsRef = root.getFactory().Type().createReference(m.getjApiClass().getFullyQualifiedName());
 
+                // A breaking change affecting an existing method: we can resolve it
                 if (oldMethodOpt.isPresent()) {
                     CtMethod oldMethod = oldMethodOpt.get();
-                    Optional<CtExecutableReference<?>> mRefOpt =
-                        clsRef.getDeclaredExecutables()
-                        .stream()
-                        .filter(m -> SpoonHelpers.matchingSignatures(m, oldMethod))
-                        .findFirst();
+                    String sign = SpoonHelpers.buildSpoonSignature(m);
+                    CtExecutableReference<?> mRef = root.getFactory().Method().createReference(sign);
 
-                    if (mRefOpt.isPresent()) {
-                        jApiMethod.getCompatibilityChanges().forEach(c ->
-                            brokenDeclarations.add(new BrokenMethod(jApiMethod, mRefOpt.get(), c))
-                        );
-                    } else {
-                        if (oldMethod.getName().equals("values") || oldMethod.getName().equals("valueOf")) {
-                            // When an enum is transformed into anything else,
-                            // japicmp reports that valueOf(String)/values() are removed
-                            // Ignore. FIXME
-                            ;
+                    try {
+                        if (mRef.getExecutableDeclaration() != null) {
+                            m.getCompatibilityChanges().forEach(c ->
+                              brokenDeclarations.add(new BrokenMethod(m, mRef, c))
+                            );
                         } else {
-                            // FIXME: Commenting following lines to avoid verbose log
-//                            System.err.println("Spoon's old method cannot be found: " + jApiMethod);
-//                            System.err.println("\tKnown bug: is the method @Deprecated?");
+                            if (oldMethod.getName().equals("values") || oldMethod.getName().equals("valueOf")) {
+                                // When an enum is transformed into anything else,
+                                // japicmp reports that valueOf(String)/values() are removed
+                                // Ignore. FIXME
+                                ;
+                            } else {
+                                System.err.println("Warning: Couldn't resolve method %s in the Spoon model".formatted(oldMethod));
+                                System.err.println(clsRef.getDeclaredExecutables().stream().map(e -> e.getSignature()).toList());
+                            }
                         }
+                    } catch (SpoonException e) {
+                        System.err.println("Couldn't find a Spoon reference for %s: %s".formatted(m, e.getMessage()));
                     }
-                } else if (newMethodOpt.isPresent()) {
-                    // Added method introducing a breaking change.
+                }
+                // A breaking change due to a newly inserted method: we cannot resolve it
+                else if (newMethodOpt.isPresent()) {
                     CtMethod newMethod = newMethodOpt.get();
 
                     // FIXME: we miss the information about the newly added method
                     if (!(newMethod.getName().equals("values") || newMethod.getName().equals("valueOf"))) {
-                        jApiMethod.getCompatibilityChanges().forEach(c ->
-                            brokenDeclarations.add(new BrokenClass(jApiMethod.getjApiClass(), clsRef, c))
+                        m.getCompatibilityChanges().forEach(c ->
+                            brokenDeclarations.add(new BrokenClass(m.getjApiClass(), clsRef, c))
                         );
                     }
-
                 } else {
                     throw new RuntimeException("The JApiCmp delta model is corrupted.");
                 }
             }
 
             @Override
-            public void visit(JApiField jApiField) {
-                CtTypeReference<?> clsRef = root.getFactory().Type().createReference(jApiField.getjApiClass().getFullyQualifiedName());
-                var oldFieldOpt = jApiField.getOldFieldOptional();
+            public void visit(JApiField f) {
+                CtTypeReference<?> clsRef = root.getFactory().Type().createReference(f.getjApiClass().getFullyQualifiedName());
+                var oldFieldOpt = f.getOldFieldOptional();
                 if (oldFieldOpt.isPresent()) {
                     CtField oldField = oldFieldOpt.get();
                     CtFieldReference<?> fRef = clsRef.getDeclaredField(oldField.getName());
 
-                    jApiField.getCompatibilityChanges().forEach(c ->
-                        brokenDeclarations.add(new BrokenField(jApiField, fRef, c))
+                    f.getCompatibilityChanges().forEach(c ->
+                        brokenDeclarations.add(new BrokenField(f, fRef, c))
                     );
                 } else {
                     // No oldField
@@ -158,46 +156,46 @@ public class Delta {
             }
 
             @Override
-            public void visit(JApiConstructor jApiConstructor) {
-                CtTypeReference<?> clsRef = root.getFactory().Type().createReference(jApiConstructor.getjApiClass().getFullyQualifiedName());
-                var oldConsOpt = jApiConstructor.getOldConstructor();
+            public void visit(JApiConstructor cons) {
+                CtTypeReference<?> clsRef = root.getFactory().Type().createReference(cons.getjApiClass().getFullyQualifiedName());
+                var oldConsOpt = cons.getOldConstructor();
 
                 if (oldConsOpt.isPresent()) {
                     CtConstructor oldCons = oldConsOpt.get();
-                    Optional<CtExecutableReference<?>> cRefOpt =
-                        clsRef.getDeclaredExecutables()
-                        .stream()
-                        .filter(c -> SpoonHelpers.matchingSignatures(c, oldCons))
-                        .findFirst();
+                    String sign = SpoonHelpers.buildSpoonSignature(cons);
+                    CtExecutableReference<?> consRef = root.getFactory().Constructor().createReference(sign);
 
                     // TODO: report bug in Spoon. Implicit constructor states that
                     // the opposite when calling isImplicit() method. Using getPosition()
                     // isValid() instead.
-                    if (cRefOpt.isPresent()) {
-                        jApiConstructor.getCompatibilityChanges().forEach(c ->
-                            brokenDeclarations.add(new BrokenMethod(jApiConstructor, cRefOpt.get(), c))
+                    if (consRef.getExecutableDeclaration() != null) {
+                        cons.getCompatibilityChanges().forEach(c ->
+                            brokenDeclarations.add(new BrokenMethod(cons, consRef, c))
                         );
                     } else {
                         // No old constructor
+                        System.err.println("Warning: Couldn't resolve constructor %s in the Spoon model".formatted(oldCons));
+                        System.err.println(clsRef.getDeclaredExecutables().stream()
+                          .filter(CtExecutableReference::isConstructor).map(e -> e.getSignature()).toList());
                     }
                 }
             }
 
             @Override
-            public void visit(JApiImplementedInterface jApiImplementedInterface) {
+            public void visit(JApiImplementedInterface intf) {
                 // Using visit(JApiClass jApiClass, JApiImplementedInterface jApiImplementedInterface)
                 // FIXME: is there a way to get the JApiClass from the interface?
             }
 
             @Override
-            public void visit(JApiAnnotation jApiAnnotation) {
+            public void visit(JApiAnnotation ann) {
             }
 
             @Override
-            public void visit(JApiSuperclass jApiSuperclass) {
-                JApiClass jApiClass = jApiSuperclass.getJApiClassOwning();
+            public void visit(JApiSuperclass superCls) {
+                JApiClass jApiClass = superCls.getJApiClassOwning();
                 CtTypeReference<?> clsRef = root.getFactory().Type().createReference(jApiClass.getFullyQualifiedName());
-                jApiSuperclass.getCompatibilityChanges().forEach(c ->
+                superCls.getCompatibilityChanges().forEach(c ->
                     brokenDeclarations.add(new BrokenClass(jApiClass, clsRef, c))
                 );
             }
@@ -229,19 +227,16 @@ public class Delta {
 
         brokenDeclarations.forEach(decl -> {
             CtReference bytecodeRef = decl.getReference();
-            if (bytecodeRef instanceof CtTypeReference<?> typeRef) {
-                // FIXME: Issue with anonymous class in the
-                // https://github.com/break-bot/spoon-before-bc/pull/2 example
+            if (bytecodeRef instanceof CtTypeReference<?> typeRef && typeRef.getTypeDeclaration() != null) {
                 CtTypeReference<?> sourceRef = root.getFactory().Type().createReference(typeRef.getTypeDeclaration());
                 decl.setSourceElement(sourceRef.getTypeDeclaration());
-            } else if (bytecodeRef instanceof CtExecutableReference<?> execRef) {
+            } else if (bytecodeRef instanceof CtExecutableReference<?> execRef && execRef.getExecutableDeclaration() != null) {
                 CtExecutableReference<?> sourceRef = root.getFactory().Executable().createReference(execRef.getExecutableDeclaration());
                 decl.setSourceElement(sourceRef.getExecutableDeclaration());
-            } else if (bytecodeRef instanceof CtFieldReference<?> fieldRef) {
+            } else if (bytecodeRef instanceof CtFieldReference<?> fieldRef && fieldRef.getFieldDeclaration() != null) {
                 CtFieldReference<?> sourceRef = root.getFactory().Field().createReference(fieldRef.getFieldDeclaration());
                 decl.setSourceElement(sourceRef.getFieldDeclaration());
-            } else
-                throw new RuntimeException("Shouldn't be here");
+            }
         });
     }
 
