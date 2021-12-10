@@ -7,7 +7,6 @@ import com.github.maracas.util.PathHelpers;
 import com.github.maracas.util.SpoonHelpers;
 import com.github.maracas.visitors.BreakingChangeVisitor;
 import com.github.maracas.visitors.CombinedVisitor;
-import japicmp.cli.JApiCli.ClassPathMode;
 import japicmp.cmp.JApiCmpArchive;
 import japicmp.cmp.JarArchiveComparator;
 import japicmp.cmp.JarArchiveComparatorOptions;
@@ -130,8 +129,7 @@ public class Maracas {
 		Options defaultOptions = Options.newDefault();
 		defaultOptions.setAccessModifier(AccessModifier.PRIVATE);
 		defaultOptions.setOutputOnlyModifications(true);
-		defaultOptions.setClassPathMode(ClassPathMode.TWO_SEPARATE_CLASSPATHS);
-		defaultOptions.setIgnoreMissingClasses(false);
+		defaultOptions.setIgnoreMissingClasses(true);
 
 		return defaultOptions;
 	}

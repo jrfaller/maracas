@@ -13,7 +13,6 @@ import japicmp.model.JApiSuperclass;
 import javassist.CtConstructor;
 import javassist.CtField;
 import javassist.CtMethod;
-import spoon.Launcher;
 import spoon.reflect.CtModel;
 import spoon.reflect.declaration.CtNamedElement;
 import spoon.reflect.declaration.CtPackage;
@@ -122,8 +121,8 @@ public class Delta {
                             ;
                         } else {
                             // FIXME: Commenting following lines to avoid verbose log
-                            // System.err.println("Spoon's old method cannot be found: " + jApiMethod);
-                            // System.err.println("\tKnown bug: is the method @Deprecated?");
+//                            System.err.println("Spoon's old method cannot be found: " + jApiMethod);
+//                            System.err.println("\tKnown bug: is the method @Deprecated?");
                         }
                     }
                 } else if (newMethodOpt.isPresent()) {
@@ -225,9 +224,7 @@ public class Delta {
         if (!PathHelpers.isValidDirectory(sources))
             throw new IllegalArgumentException("sources isn't a valid directory");
 
-        Launcher launcher = new Launcher();
-        launcher.addInputResource(sources.toAbsolutePath().toString());
-        CtModel model = launcher.buildModel();
+        CtModel model = SpoonHelpers.buildSpoonModel(sources, null);
         CtPackage root = model.getRootPackage();
 
         brokenDeclarations.forEach(decl -> {
@@ -235,12 +232,8 @@ public class Delta {
             if (bytecodeRef instanceof CtTypeReference<?> typeRef) {
                 // FIXME: Issue with anonymous class in the
                 // https://github.com/break-bot/spoon-before-bc/pull/2 example
-                if (typeRef.getTypeDeclaration() == null) {
-                    System.err.println("Null type for " + typeRef + " [" + decl + "]");
-                } else {
-                    CtTypeReference<?> sourceRef = root.getFactory().Type().createReference(typeRef.getTypeDeclaration());
-                    decl.setSourceElement(sourceRef.getTypeDeclaration());
-                }
+                CtTypeReference<?> sourceRef = root.getFactory().Type().createReference(typeRef.getTypeDeclaration());
+                decl.setSourceElement(sourceRef.getTypeDeclaration());
             } else if (bytecodeRef instanceof CtExecutableReference<?> execRef) {
                 CtExecutableReference<?> sourceRef = root.getFactory().Executable().createReference(execRef.getExecutableDeclaration());
                 decl.setSourceElement(sourceRef.getExecutableDeclaration());
